@@ -18,6 +18,7 @@ h1 { font-size: 18px; font-weight: 600; color: #223850; }
 .srow input[type=range] { flex: 1; accent-color: #4CC2C4; cursor: pointer; height: 4px; }
 .srow .val { font-size: 13px; font-weight: 600; color: #223850; min-width: 90px; text-align: right; }
 .toggle-group { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-bottom: 1rem; }
+.toggle-group-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
 .toggle-btn { border: 1px solid #e0e0e0; border-radius: 8px; padding: 7px 8px; cursor: pointer; background: #fff; text-align: center; user-select: none; transition: background 0.15s, border-color 0.15s; }
 .toggle-btn:hover { background: #f5f7fa; }
 .toggle-btn.active { background: #223850; border-color: #223850; }
@@ -76,14 +77,25 @@ h1 { font-size: 18px; font-weight: 600; color: #223850; }
 .share-btn.copied { background: #16a34a; border-color: #16a34a; color: #fff; }
 
 /* Mobile responsiveness */
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   body { padding: 0.75rem; }
   .card { padding: 1rem; }
-  .slider-grid { grid-template-columns: 1fr; gap: 0.5rem; }
-  .srow .lbl { min-width: 130px; font-size: 11px; }
-  .srow .val { min-width: 75px; font-size: 12px; }
+  .slider-grid { grid-template-columns: 1fr; gap: 1rem; }
+  .srow {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 4px 8px;
+    align-items: center;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #f5f5f5;
+  }
+  .srow:last-child { border-bottom: none; padding-bottom: 0; }
+  .srow .lbl { grid-column: 1; grid-row: 1; min-width: 0; font-size: 13px; color: #555; }
+  .srow .val { grid-column: 2; grid-row: 1; min-width: 0; font-size: 14px; text-align: right; }
+  .srow input[type=range] { grid-column: 1 / -1; grid-row: 2; width: 100%; margin-top: 4px; height: 6px; }
   .compare-grid { grid-template-columns: 1fr; }
-  .toggle-group { grid-template-columns: 1fr; gap: 6px; }
+  .toggle-group { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; }
   h1 { font-size: 16px; }
 }
 </style>
@@ -123,6 +135,19 @@ h1 { font-size: 18px; font-weight: 600; color: #223850; }
       <span class="val" id="lbl-fee">$15 / wk</span>
     </div>
   </div>
+
+  <div class="section-label">Oil type</div>
+  <div class="toggle-group toggle-group-2">
+    <div class="toggle-btn active" id="oil-standard" onclick="setOilType('standard')">
+      <div class="t-title">Standard oil</div>
+      <div class="t-sub">10% base reduction</div>
+    </div>
+    <div class="toggle-btn" id="oil-clearsoy" onclick="setOilType('clearsoy')">
+      <div class="t-title">RT Clear Soy Oil</div>
+      <div class="t-sub">0% base reduction</div>
+    </div>
+  </div>
+  <div class="tank-note" id="oil-note">Switching to RT oil from a competitor typically yields ~10% reduction without a filter box.</div>
 
   <div class="section-label">Tank configuration</div>
   <div class="toggle-group">
@@ -169,7 +194,7 @@ h1 { font-size: 18px; font-weight: 600; color: #223850; }
     </div>
     <div class="path-card" id="card-without">
       <div class="path-title">Without filter box <span class="badge" id="badge-without" style="display:none;">Recommended</span></div>
-      <div class="path-row"><span class="k">Oil reduction (capped)</span><span class="v">10%</span></div>
+      <div class="path-row"><span class="k">Oil reduction</span><span class="v" id="wo-pct">10%</span></div>
       <div class="path-row"><span class="k">Oil savings / week</span><span class="v" id="wo-oil-sav">—</span></div>
       <div class="path-row"><span class="k">Oil price difference</span><span class="v" id="wo-price-diff">—</span></div>
       <div class="path-row"><span class="k">Filter box fee</span><span class="v v-neu">$0.00</span></div>
@@ -215,12 +240,15 @@ var el = {
   tankNote: $('tank-note'),
   barWith: $('bar-with'), barWithout: $('bar-without'),
   breakeven: $('breakeven'), breakevenText: $('breakeven-text'),
-  shareBtn: $('share-btn'), shareLabel: $('share-label')
+  shareBtn: $('share-btn'), shareLabel: $('share-label'),
+  woPct: $('wo-pct'), oilNote: $('oil-note')
 };
 
 var tankAdder = 0;
 var tankKey = 'indoor';
 var tankLabel = 'Indoor only';
+var oilTypeKey = 'standard';
+var baseCap = 0.10;
 
 /* ── URL param handling ── */
 function loadFromURL() {
@@ -235,6 +263,9 @@ function loadFromURL() {
     var adder = t === 'split' ? 25 : t === 'outdoor' ? 45 : 0;
     setTank(t, adder, true);
   }
+  if (p.has('oil')) {
+    setOilType(p.get('oil'), true);
+  }
 }
 
 function buildShareURL() {
@@ -245,6 +276,7 @@ function buildShareURL() {
   p.set('pct', el.slPct.value);
   p.set('fee', el.slFee.value);
   if (tankKey !== 'indoor') p.set('tank', tankKey);
+  if (oilTypeKey !== 'standard') p.set('oil', oilTypeKey);
   return window.location.origin + window.location.pathname + '?' + p.toString();
 }
 
@@ -285,6 +317,23 @@ function setTank(id, adder, skipCalc) {
   if (!skipCalc) calc();
 }
 
+/* ── Oil type toggle ── */
+function setOilType(id, skipCalc) {
+  ['standard','clearsoy'].forEach(function(t) {
+    $('oil-' + t).classList.remove('active');
+  });
+  $('oil-' + id).classList.add('active');
+  oilTypeKey = id;
+  if (id === 'clearsoy') {
+    baseCap = 0;
+    el.oilNote.textContent = 'Customer is already on clear soy — no oil-change reduction without a filter box.';
+  } else {
+    baseCap = 0.10;
+    el.oilNote.textContent = 'Switching to RT oil from a competitor typically yields ~10% reduction without a filter box.';
+  }
+  if (!skipCalc) calc();
+}
+
 /* ── Formatting helpers ── */
 function signed(n) { return (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2); }
 function cls(n) { return 'v ' + (n > 0 ? 'v-pos' : n < 0 ? 'v-neg' : 'v-neu'); }
@@ -296,7 +345,7 @@ function calc() {
   var vol    = parseFloat(el.slVol.value);
   var pct    = parseFloat(el.slPct.value) / 100;
   var fee    = parseFloat(el.slFee.value);
-  var fbCost = 15, capPct = 0.10, tank = tankAdder;
+  var fbCost = 15, capPct = baseCap, tank = tankAdder;
 
   /* Update labels */
   el.lblCust.textContent = '$' + custP.toFixed(2) + ' / lb';
@@ -327,6 +376,7 @@ function calc() {
   el.wNet.className          = 'v ' + (wNet > 0 ? 'v-pos' : wNet < 0 ? 'v-neg' : 'v-neu');
 
   /* Without filter box card */
+  el.woPct.textContent         = Math.round(capPct * 100) + '%';
   el.woOilSav.textContent    = signed(woOilSav);
   el.woOilSav.className      = cls(woOilSav);
   el.woPriceDiff.textContent = signed(priceDiff);
